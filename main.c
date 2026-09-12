@@ -9,6 +9,18 @@ typedef struct {
     float gpa;
 } Student;
 
+// ---------- Prototypes ----------
+int save_to_file(Student *db, int count, const char *filename);
+int load_from_file(Student **db, int *max_size, const char *filename);
+int resize(Student **db, int *max_size);
+void insert(Student **db, int *count, int *max_size, Student s);
+int print_all(Student *db, int count);
+int find_by_id(Student *db, int count, int id);
+int update(Student *db, int count, int id);
+int read_line(char *buf, int bufsize);
+int delete_by_id(Student *db, int *count, int id);
+void clear_input_buffer(void);
+
 // ---------- File I/O (CSV) ----------
 
 int save_to_file(Student *db, int count, const char *filename) {
@@ -29,22 +41,29 @@ int save_to_file(Student *db, int count, const char *filename) {
     return 1;
 }
 
-int load_from_file(Student *db, const char *filename) {
+int load_from_file(Student **db, int *max_size, const char *filename) {
     FILE *storage = fopen(filename, "r");
     if (storage == NULL) {
-        return 0;
+        return 0; // no existing file yet — not an error, just start empty
     }
 
     char line[256];
     int count = 0;
 
-    if (fgets(line, sizeof(line), storage) == NULL) {
+    if (fgets(line, sizeof(line), storage) == NULL) { // header line
         fclose(storage);
         return 0;
     }
 
-    while (fgets(line, sizeof(line), storage) != NULL && count < 100) {
+    while (fgets(line, sizeof(line), storage) != NULL) {
         if (line[0] == '\n' || line[0] == '\0') continue;
+
+        if (count >= *max_size) {
+            if (resize(db, max_size) != 0) {
+                fprintf(stderr, "Could not grow database while loading file; remaining records skipped.\n");
+                break;
+            }
+        }
 
         int id, age;
         char name[50];
@@ -56,10 +75,10 @@ int load_from_file(Student *db, const char *filename) {
             continue;
         }
 
-        db[count].id = id;
-        strcpy(db[count].name, name);
-        db[count].age = age;
-        db[count].gpa = gpa;
+        (*db)[count].id = id;
+        strcpy((*db)[count].name, name);
+        (*db)[count].age = age;
+        (*db)[count].gpa = gpa;
         count++;
     }
 
@@ -69,12 +88,42 @@ int load_from_file(Student *db, const char *filename) {
 
 // ---------- Database operations ----------
 
-void insert(Student *db, int *count, Student s) {
-    if (*count >= 100) {
-        printf("Database is full\n");
-        return;
+int resize(Student **db, int *max_size) {
+    int new_size = (*max_size) * 2;
+    Student *temp = realloc(*db, (size_t)new_size * sizeof(Student));
+    if (temp == NULL) {
+        fprintf(stderr, "Memory reallocation failed! Original array is still intact.\n");
+        return 1; 
     }
-    db[*count] = s;
+    *db = temp;
+    *max_size = new_size;
+    return 0;
+}
+
+int read_line(char *buf, int bufsize) {
+    if (fgets(buf, bufsize, stdin) == NULL) {
+        buf[0] = '\0';
+        return 0;
+    }
+
+    size_t len = strlen(buf);
+    if (len > 0 && buf[len - 1] == '\n') {
+        buf[len - 1] = '\0';
+        len--;
+    }
+
+    return len > 0 ? 1 : 0;
+}
+
+void insert(Student **db, int *count, int *max_size, Student s) {
+    if (*count >= *max_size) {
+        if (resize(db, max_size) != 0) {
+            printf("Failed to resize. Insert aborted.\n");
+            return;
+        }
+        printf("Database resized to %d.\n", *max_size);
+    }
+    (*db)[*count] = s;
     (*count)++;
 }
 
@@ -101,10 +150,46 @@ int find_by_id(Student *db, int count, int id) {
     return -1;
 }
 
-int update_gpa(Student *db, int count, int id, float gpa) {
+int update(Student *db, int count, int id) {
     int idx = find_by_id(db, count, id);
     if (idx == -1) return 0;
-    db[idx].gpa = gpa;
+
+    printf("Current record: Name=%s, Age=%d, GPA=%.2f\n",
+           db[idx].name, db[idx].age, db[idx].gpa);
+    
+    char line[256];
+
+    // --- Name ---
+    printf("Enter new name (or press Enter to keep \"%s\"): ", db[idx].name);
+    if (read_line(line, sizeof(line))) {
+        strncpy(db[idx].name, line, sizeof(db[idx].name) - 1);
+        db[idx].name[sizeof(db[idx].name) - 1] = '\0';
+    }
+
+    // --- Age ---
+    printf("Enter new age (or press Enter to keep %d): ", db[idx].age);
+    if (read_line(line, sizeof(line))) {
+        char *endptr;
+        long val = strtol(line, &endptr, 10);
+        if (endptr == line || *endptr != '\0') {
+            printf("  Invalid age input — keeping current value.\n");
+        } else {
+            db[idx].age = (int)val;
+        }
+    }
+
+    // --- GPA ---
+    printf("Enter new GPA (or press Enter to keep %.2f): ", db[idx].gpa);
+    if (read_line(line, sizeof(line))) {
+        char *endptr;
+        double val = strtod(line, &endptr);
+        if (endptr == line || *endptr != '\0') {
+            printf("  Invalid GPA input — keeping current value.\n");
+        } else {
+            db[idx].gpa = (float)val;
+        }
+    }
+
     return 1;
 }
 
@@ -128,8 +213,14 @@ void clear_input_buffer(void) {
 // ---------- Main ----------
 
 int main(void) {
-    Student db[100];
-    int count = load_from_file(db, "db.csv");
+    int max_size = 100;
+    Student *db = malloc((size_t)max_size * sizeof(Student));
+    if (db == NULL) {
+        fprintf(stderr, "Initial allocation failed.\n");
+        return 1;
+    }
+
+    int count = load_from_file(&db, &max_size, "db.csv");
     int running = 1;
     int choice;
 
@@ -144,20 +235,21 @@ int main(void) {
 
         switch (choice) {
             case 1: {
-                if (count >= 100) {
-                    printf("Database is full\n");
-                    break;
-                }
                 Student new_student;
 
                 printf("Enter student fields:\n");
-                printf("int id, char name[50] (no commas), int age, float gpa\n");
-                scanf("%d", &new_student.id);
-                scanf("%49s", new_student.name);
-                scanf("%d", &new_student.age);
-                scanf("%f", &new_student.gpa);
+                printf("int id, name (spaces ok, no commas), int age, float gpa\n");
 
-                insert(db, &count, new_student);
+                if (scanf("%d", &new_student.id) != 1 ||
+                    scanf(" %49[^\n]", new_student.name) != 1 ||
+                    scanf("%d", &new_student.age) != 1 ||
+                    scanf("%f", &new_student.gpa) != 1) {
+                    printf("Invalid input — insert cancelled.\n");
+                    clear_input_buffer();
+                    break;
+                }
+
+                insert(&db, &count, &max_size, new_student);
                 printf("Inserted successfully!\n");
                 break;
             }
@@ -168,9 +260,9 @@ int main(void) {
             case 3: {
                 int id;
                 printf("Enter student ID to search by ID: ");
-                scanf("%d", &id);
-                if (id <= 0) {
+                if (scanf("%d", &id) != 1 || id <= 0) {
                     printf("Invalid ID!\n");
+                    clear_input_buffer();
                     break;
                 }
                 int idx = find_by_id(db, count, id);
@@ -183,11 +275,15 @@ int main(void) {
             }
             case 4: {
                 int id;
-                float gpa;
-                printf("Enter ID and new GPA for a student: ");
-                scanf("%d", &id);
-                scanf("%f", &gpa);
-                if (update_gpa(db, count, id, gpa)) {
+                printf("Enter ID to update: ");
+                if (scanf("%d", &id) != 1) {
+                    printf("Invalid input.\n");
+                    clear_input_buffer();
+                    break;
+                }
+                clear_input_buffer(); 
+
+                if (update(db, count, id)) {
                     printf("Updated successfully!\n");
                 } else {
                     printf("Not found.\n");
@@ -197,7 +293,11 @@ int main(void) {
             case 5: {
                 int id;
                 printf("Enter ID to delete: ");
-                scanf("%d", &id);
+                if (scanf("%d", &id) != 1) {
+                    printf("Invalid input.\n");
+                    clear_input_buffer();
+                    break;
+                }
                 if (delete_by_id(db, &count, id)) {
                     printf("Deleted successfully!\n");
                 } else {
@@ -209,6 +309,7 @@ int main(void) {
                 printf("Saving and Exiting...\n");
                 save_to_file(db, count, "db.csv");
                 running = 0;
+                free(db);
                 break;
             }
             default:
