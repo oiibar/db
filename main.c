@@ -13,13 +13,16 @@ typedef struct {
 int save_to_file(Student *db, int count, const char *filename);
 int load_from_file(Student **db, int *max_size, const char *filename);
 int resize(Student **db, int *max_size);
+int compare_by_gpa_asc(const void* a, const void* b);
+int compare_by_age(const void* a, const void* b);
+int compare_by_name(const void* a, const void* b);
+int read_line(char *buf, int bufsize);
+void clear_input_buffer(void);
 void insert(Student **db, int *count, int *max_size, Student s);
 int print_all(Student *db, int count);
 int find_by_id(Student *db, int count, int id);
 int update(Student *db, int count, int id);
-int read_line(char *buf, int bufsize);
 int delete_by_id(Student *db, int *count, int id);
-void clear_input_buffer(void);
 
 // ---------- File I/O (CSV) ----------
 
@@ -44,13 +47,13 @@ int save_to_file(Student *db, int count, const char *filename) {
 int load_from_file(Student **db, int *max_size, const char *filename) {
     FILE *storage = fopen(filename, "r");
     if (storage == NULL) {
-        return 0; // no existing file yet — not an error, just start empty
+        return 0;
     }
 
     char line[256];
     int count = 0;
 
-    if (fgets(line, sizeof(line), storage) == NULL) { // header line
+    if (fgets(line, sizeof(line), storage) == NULL) { 
         fclose(storage);
         return 0;
     }
@@ -210,6 +213,31 @@ void clear_input_buffer(void) {
     while ((c = getchar()) != '\n' && c != EOF);
 }
 
+int compare_by_gpa_asc(const void* a, const void* b) {
+    const Student *s1 = (const Student *)a;
+    const Student *s2 = (const Student *)b;
+
+    if(s1->gpa > s2->gpa) return -1;
+    if(s1->gpa < s2->gpa) return 1;
+    return 0;
+}
+
+int compare_by_name(const void *a, const void *b) {
+    const Student *s1 = (const Student *)a;
+    const Student *s2 = (const Student *)b;
+    
+    return strcmp(s1->name, s2->name);
+}
+
+int compare_by_age(const void* a, const void* b) {
+    const Student *s1 = (const Student *)a;
+    const Student *s2 = (const Student *)b;
+
+    if(s1->age < s2->age) return -1;
+    if(s1->age > s2->age) return 1;
+    return 0;
+}
+
 // ---------- Main ----------
 
 int main(void) {
@@ -225,7 +253,7 @@ int main(void) {
     int choice;
 
     while (running) {
-        printf("\n1. Insert \n2. List \n3. Search \n4. Update \n5. Delete \n6. Exit\nChoice: ");
+        printf("\n1. Insert \n2. List \n3. Search \n4. Update \n5. Delete \n6. Exit\n7. Sort\nChoice: ");
 
         if (scanf("%d", &choice) != 1) {
             printf("Invalid input. Please enter a number.\n");
@@ -310,6 +338,23 @@ int main(void) {
                 save_to_file(db, count, "db.csv");
                 running = 0;
                 free(db);
+                break;
+            }
+            case 7: {
+                printf("Sort by: 1=Name 2=Age 3=GPA\n");
+                int sort_choice;
+                if (scanf("%d", &sort_choice) != 1) {
+                    printf("Invalid input.\n");
+                    clear_input_buffer();
+                    break;
+                }
+                switch (sort_choice) {
+                    case 1: qsort(db, count, sizeof(Student), compare_by_name); break;
+                    case 2: qsort(db, count, sizeof(Student), compare_by_age);  break;
+                    case 3: qsort(db, count, sizeof(Student), compare_by_gpa_asc);  break;
+                    default: printf("Invalid choice.\n"); break;
+                }
+                printf("Sorted.\n");
                 break;
             }
             default:
