@@ -15,6 +15,7 @@ int load_from_file(Student **db, int *max_size, const char *filename);
 int resize(Student **db, int *max_size);
 int compare_by_gpa_asc(const void* a, const void* b);
 int compare_by_age(const void* a, const void* b);
+int compare_by_id(const void* a, const void* b);
 int compare_by_name(const void* a, const void* b);
 int read_line(char *buf, int bufsize);
 void clear_input_buffer(void);
@@ -128,6 +129,7 @@ void insert(Student **db, int *count, int *max_size, Student s) {
     }
     (*db)[*count] = s;
     (*count)++;
+    qsort(*db, *count, sizeof(Student), compare_by_id);
 }
 
 int print_all(Student *db, int count) {
@@ -145,12 +147,12 @@ int print_all(Student *db, int count) {
 }
 
 int find_by_id(Student *db, int count, int id) {
-    for (int i = 0; i < count; i++) {
-        if (db[i].id == id) {
-            return i;
-        }
-    }
-    return -1;
+    qsort(db, count, sizeof(Student), compare_by_id);
+    Student search_key;
+    search_key.id = id;
+    Student *result = (Student *)bsearch(&search_key, db, (size_t)count, sizeof(Student), compare_by_id);
+    if(result == NULL) return -1;
+    return (int)(result - db);
 }
 
 int update(Student *db, int count, int id) {
@@ -235,6 +237,15 @@ int compare_by_age(const void* a, const void* b) {
 
     if(s1->age < s2->age) return -1;
     if(s1->age > s2->age) return 1;
+    return 0;
+}
+
+int compare_by_id(const void* a, const void* b) {
+    const Student *s1 = (const Student *)a;
+    const Student *s2 = (const Student *)b;
+
+    if(s1->id < s2->id) return -1;
+    if(s1->id > s2->id) return 1;
     return 0;
 }
 
@@ -335,6 +346,7 @@ int main(void) {
             }
             case 6: {
                 printf("Saving and Exiting...\n");
+                qsort(db, count, sizeof(Student), compare_by_id);
                 save_to_file(db, count, "db.csv");
                 running = 0;
                 free(db);
